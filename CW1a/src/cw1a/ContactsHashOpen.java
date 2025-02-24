@@ -5,20 +5,20 @@ package cw1a;
  * @author DL 2025-01
  */
 public class ContactsHashOpen implements IContactDB {  
-    private final int initialTableCapacity = 1000;
+    private final int initialTableCapacity = 1019; // Prime number to reduce clustering
     private Contact[] table;
     private int tableCapacity;
     private int numEntries;
     private int totalVisited = 0;
 
-    private static final double maxLoadFactor = 70.0;
-            
-    public int getNumEntries(){ return numEntries; }
+    private static final double maxLoadFactor = 50.0; // Set max load factor to 50%
+
+    public int getNumEntries() { return numEntries; }
     public void resetTotalVisited() { totalVisited = 0; }
     public int getTotalVisited() { return totalVisited; }
 
     public ContactsHashOpen() {
-        System.out.println("Hash Table with open addressing");
+        System.out.println("Hash Table with Quadratic Probing");
         this.tableCapacity = initialTableCapacity;
         table = new Contact[tableCapacity];
         clearDB();
@@ -50,7 +50,7 @@ public class ContactsHashOpen implements IContactDB {
             hash = ((hash << 5) + hash) + s.charAt(i);  // hash * 33 + s[i]
         }
         
-        return Math.abs(hash) % table.length;  // Ensure hash is positive and within bounds
+        return Math.abs(hash) % table.length;  // Ensure positive hash within bounds
     }
 
     private double loadFactor() {
@@ -58,21 +58,27 @@ public class ContactsHashOpen implements IContactDB {
         // Note: Need for cast to double
     }
 
+    /**
+     * Quadratic Probing implementation in `findPos()`
+     */
     private int findPos(String name) {
         assert name != null && !name.trim().equals("");
         int pos = hash(name);
+        int i = 1; // Quadratic probing index
         int numVisited = 1;  
-        System.out.println("Finding " + pos + ": " + name );
+
+        System.out.println("Finding " + pos + ": " + name);
 
         while (table[pos] != null && !name.equals(table[pos].getName())) {
-           System.out.println("Visiting bucket " + pos + ": " + table[pos] );
-           numVisited++;
-           pos = (pos + 1) % table.length; // linear probing
+            System.out.println("Visiting bucket " + pos + ": " + table[pos]);
+            numVisited++;
+            pos = (pos + (i * i)) % table.length; // Quadratic probing: i^2
+            i++; // Increase i for next quadratic probe
         }  
 
         System.out.println("Number of buckets visited = " + numVisited);
         totalVisited += numVisited;
-      
+
         assert table[pos] == null || name.equals(table[pos].getName());
         return pos;
     }
