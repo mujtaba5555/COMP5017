@@ -5,20 +5,21 @@ package cw1a;
  * @author DL 2025-01
  */
 public class ContactsHashOpen implements IContactDB {  
-    private final int initialTableCapacity = 1019; // Prime number to reduce clustering
+    private final int initialTableCapacity = 1019; // Prime number for better hash distribution
     private Contact[] table;
     private int tableCapacity;
     private int numEntries;
     private int totalVisited = 0;
 
-    private static final double maxLoadFactor = 50.0; // Set max load factor to 50%
+    private static final double maxLoadFactor = 50.0; // Load factor at which resizing occurs
+    private static final Contact TOMBSTONE = new Contact("TOMBSTONE", "DELETED"); // Marker for deleted entries
 
     public int getNumEntries() { return numEntries; }
     public void resetTotalVisited() { totalVisited = 0; }
     public int getTotalVisited() { return totalVisited; }
 
     public ContactsHashOpen() {
-        System.out.println("Hash Table with Quadratic Probing");
+        System.out.println("Hash Table with Quadratic Probing & Tombstone Deletion");
         this.tableCapacity = initialTableCapacity;
         table = new Contact[tableCapacity];
         clearDB();
@@ -26,8 +27,6 @@ public class ContactsHashOpen implements IContactDB {
 
     /**
      * Empties the database.
-     *
-     * @pre true
      */
     public void clearDB() {
         for (int i = 0; i != table.length; i++) {
@@ -37,10 +36,7 @@ public class ContactsHashOpen implements IContactDB {
     }
 
     /**
-     * Improved Hash Function using polynomial rolling hash (djb2-based)
-     *
-     * @param s The key (name) to hash
-     * @return A hash value mapped to the table size
+     * 
      */
     private int hash(String s) {
         assert s != null && !s.trim().equals(""); 
@@ -55,51 +51,53 @@ public class ContactsHashOpen implements IContactDB {
 
     private double loadFactor() {
         return (double) numEntries / (double) table.length * 100.0; 
-        // Note: Need for cast to double
     }
 
     /**
-     * Quadratic Probing implementation in `findPos()`
+     * Quadratic Probing implementation in `findPos()`, now correctly reusing tombstones
      */
     private int findPos(String name) {
         assert name != null && !name.trim().equals("");
         int pos = hash(name);
         int i = 1; // Quadratic probing index
-        int numVisited = 1;  
+        int firstTombstone = -1; // Track the first available tombstone
 
         System.out.println("Finding " + pos + ": " + name);
 
-        while (table[pos] != null && !name.equals(table[pos].getName())) {
+        while (table[pos] != null) {
+            if (table[pos] == TOMBSTONE) {
+                if (firstTombstone == -1) {
+                    firstTombstone = pos; // Save first tombstone location for reuse
+                }
+            } else if (name.equals(table[pos].getName())) {
+                return pos; // Name found
+            }
+
             System.out.println("Visiting bucket " + pos + ": " + table[pos]);
-            numVisited++;
-            pos = (pos + (i * i)) % table.length; // Quadratic probing: i^2
-            i++; // Increase i for next quadratic probe
-        }  
+            pos = (pos + (i * i)) % table.length; // Quadratic probing
+            i++;
+        }
 
-        System.out.println("Number of buckets visited = " + numVisited);
-        totalVisited += numVisited;
+        System.out.println("Number of buckets visited = " + i);
+        totalVisited += i;
 
-        assert table[pos] == null || name.equals(table[pos].getName());
-        return pos;
+        return (firstTombstone != -1) ? firstTombstone : pos; // Use tombstone if available
     }
 
     public boolean containsName(String name) {
         assert name != null && !name.equals("");
         int pos = findPos(name);
-        return get(name) != null;
+        return table[pos] != null && table[pos] != TOMBSTONE;
     }
 
     @Override
     public Contact get(String name) {
         assert name != null && !name.trim().equals("");
-        Contact result;
         int pos = findPos(name);       
-        if (table[pos] == null) {
-            result = null; // Not found
-        } else {
-            result = table[pos];
-        }
-        return result;
+        if (table[pos] == null || table[pos] == TOMBSTONE) {
+            return null; // Not found
+        } 
+        return table[pos];
     }
 
     public int size() { return numEntries; }
@@ -110,14 +108,14 @@ public class ContactsHashOpen implements IContactDB {
         String name = contact.getName();
         int pos = findPos(name);
         Contact previous;
-        assert table[pos] == null || name.equals(table[pos].getName());
-        previous = table[pos]; // Old value
+        assert table[pos] == null || name.equals(table[pos].getName()) || table[pos] == TOMBSTONE;
+        previous = table[pos]; // Store previous contact
 
-        if (previous == null) { // New entry
+        if (previous == null || previous == TOMBSTONE) { // New or replacing a tombstone
             table[pos] = contact;
             numEntries++;
         } else {
-            table[pos] = contact; // Overwriting 
+            table[pos] = contact; // Overwrite existing
         }
         return previous;
     }
@@ -133,11 +131,24 @@ public class ContactsHashOpen implements IContactDB {
         return previous;
     }
 
+    /**
+     * Removes a contact by replacing it with a tombstone instead of null.
+     */
     public Contact remove(String name) {
         assert name != null && !name.trim().equals("");
         int pos = findPos(name);
-        System.out.println("Remove not yet implemented");
-        return null;
+
+        if (table[pos] == null || table[pos] == TOMBSTONE) {
+            System.out.println(name + " not found.");
+            return null; // Name does not exist
+        }
+
+        Contact removed = table[pos]; // Store removed contact
+        table[pos] = TOMBSTONE; // Mark position as deleted
+        numEntries--;
+
+        System.out.println(name + " removed successfully.");
+        return removed;
     }
 
     public void displayDB() {
@@ -145,44 +156,12 @@ public class ContactsHashOpen implements IContactDB {
                 + " Load Factor " + loadFactor() + "%");
 
         for (int i = 0; i != table.length; i++) {
-            if (table[i] != null) 
+            if (table[i] != null && table[i] != TOMBSTONE) 
                 System.out.println(i + " " + table[i].toString());
+            else if (table[i] == TOMBSTONE)
+                System.out.println(i + " " + "TOMBSTONE");
             else
                  System.out.println(i + " " + "_____");
-        }
-        
-        Contact[] toBeSortedTable = new Contact[tableCapacity];
-        int j = 0;
-        for (int i = 0; i != table.length; i++) {
-            if (table[i] != null) {
-                toBeSortedTable[j] = table[i];
-                j++;
-            }
-        }
-
-        quicksort(toBeSortedTable, 0, j - 1);
-        for (int i = 0; i != j; i++) {
-            System.out.println(i + " " + " " + toBeSortedTable[i].toString());
-        }
-    }
-
-    private void quicksort(Contact[] a, int low, int high) {
-        assert a != null && 0 <= low && low <= high && high < a.length;
-        int i = low, j = high;
-        Contact temp;
-
-        if (high >= 0) { 
-            String pivot = a[(low + high) / 2].getName();
-            while (i <= j) {
-                while (a[i].getName().compareTo(pivot) < 0) i++;
-                while (a[j].getName().compareTo(pivot) > 0) j--;
-                if (i <= j) {
-                    temp = a[i]; a[i] = a[j]; a[j] = temp;
-                    i++; j--;
-                }
-                if (low < j) quicksort(a, low, j);
-                if (i < high) quicksort(a, i, high);
-            }
         }
     }
 
@@ -197,9 +176,9 @@ public class ContactsHashOpen implements IContactDB {
         clearDB();
         numEntries = 0;
         for (int i = 0; i != oldTableCapacity; i++) {
-            if (oldTable[i] != null) {
-                putWithoutResizing(oldTable[i]);
+            if (oldTable[i] != null && oldTable[i] != TOMBSTONE) { 
+                putWithoutResizing(oldTable[i]); // Rehash only valid entries
             }
         }
     }
-} 
+}
